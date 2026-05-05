@@ -1,31 +1,46 @@
 import sqlite3
-import random
+from datetime import datetime
 
-def create_and_populate_db():
-    # 1. Kết nối đến database (nếu chưa có sẽ tự tạo)
-    conn = sqlite3.connect('your_database.db')
+DB_FILE = "your_database.db"
+
+TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS player_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_name TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    keyword TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+SAMPLE_ROWS = [
+    ("teamA", "tuan", "FOREST", "2026-05-04 23:02:22"),
+    ("teamA", "tuan", "BEACH", "2026-05-04 23:02:38"),
+    ("team_A", "tuan", "FOREST", "2026-05-05 09:23:03"),
+]
+
+
+def create_and_populate_db(db_path: str = DB_FILE) -> None:
+    """Create the single-table schema `player_stats` and seed sample rows."""
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 2. Tạo 10 bảng (mỗi bảng chỉ 1 hàng, id cố định để ghi đè như conversation id)
-    for i in range(1, 11):
-        table_name = f'Team_{i}'
-        
-        # Xóa bảng cũ nếu đã tồn tại để tránh lỗi trùng lặp khi chạy lại
-        cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-        
-        # Tạo bảng mới với id cố định và 1 cột value
-        cursor.execute(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY, value INTEGER)")
-        
-        # Chèn / ghi đè giá trị mẫu duy nhất với id=1
-        sample_value = random.randint(10, 100)
-        cursor.execute(f"INSERT OR REPLACE INTO {table_name} (id, value) VALUES (1, ?)", (sample_value,))
-        
-        print(f"Đã tạo {table_name} với giá trị: {sample_value}")
+    cursor.execute("DROP TABLE IF EXISTS player_stats")
+    cursor.execute(TABLE_SQL)
 
-    # 3. Lưu thay đổi và đóng kết nối
+    cursor.executemany(
+        """
+        INSERT INTO player_stats (team_name, player_name, keyword, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        SAMPLE_ROWS,
+    )
+
     conn.commit()
     conn.close()
-    print("\nDatabase 'your_database.db' đã được tạo thành công!")
+
+    print(f"Seeded {len(SAMPLE_ROWS)} rows into '{db_path}' at {datetime.now():%Y-%m-%d %H:%M:%S}")
+
 
 if __name__ == "__main__":
     create_and_populate_db()

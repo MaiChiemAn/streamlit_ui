@@ -1,50 +1,54 @@
 import sqlite3
-import random
 import time
+from datetime import datetime
 
 DB_FILE = "your_database.db"
-LOW_VALUE = 0
-HIGH_VALUE = 30
 INTERVAL_SECONDS = 3
 
+SAMPLE_KEYWORDS = ["FOREST", "BEACH", "MOUNTAIN", "CITY", "DESERT"]
+SAMPLE_TEAMS = ["teamA", "teamB", "teamC"]
+SAMPLE_PLAYER = "tuan"
 
-def ensure_tables(conn: sqlite3.Connection) -> None:
-    """Create Team_1..Team_10 tables with fixed id=1 row."""
-    cursor = conn.cursor()
-    for i in range(1, 11):
-        table = f"Team_{i}"
-        cursor.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {table} (
-                id INTEGER PRIMARY KEY,
-                value INTEGER
-            )
-            """
-        )
+TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS player_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_name TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    keyword TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+
+def ensure_table(conn: sqlite3.Connection) -> None:
+    conn.execute(TABLE_SQL)
     conn.commit()
 
 
-def upsert_random_values(conn: sqlite3.Connection) -> None:
-    """Upsert a single row per team (overwrite existing, id fixed to 1)."""
+def insert_sample_row(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
-    for i in range(1, 11):
-        table = f"Team_{i}"
-        value = random.randint(LOW_VALUE, HIGH_VALUE)
-        cursor.execute(f"INSERT OR REPLACE INTO {table} (id, value) VALUES (1, ?)", (value,))
-        print(f"Set {table} (id=1) -> {value}")
+    team = SAMPLE_TEAMS[int(time.time()) % len(SAMPLE_TEAMS)]
+    keyword = SAMPLE_KEYWORDS[int(time.time()) % len(SAMPLE_KEYWORDS)]
+    cursor.execute(
+        """
+        INSERT INTO player_stats (team_name, player_name, keyword, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (team, SAMPLE_PLAYER, keyword, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    )
     conn.commit()
+    print(f"Inserted: team={team}, player={SAMPLE_PLAYER}, keyword={keyword}")
 
 
 def main() -> None:
     print(
-        f"Starting updater: every {INTERVAL_SECONDS}s, values {LOW_VALUE}-{HIGH_VALUE} "
-        "into Team_1..Team_10. Press Ctrl+C to stop."
+        f"Starting realtime inserter every {INTERVAL_SECONDS}s into player_stats. Press Ctrl+C to stop."
     )
     try:
         while True:
             with sqlite3.connect(DB_FILE) as conn:
-                ensure_tables(conn)
-                upsert_random_values(conn)
+                ensure_table(conn)
+                insert_sample_row(conn)
             time.sleep(INTERVAL_SECONDS)
     except KeyboardInterrupt:
         print("Updater stopped by user.")
