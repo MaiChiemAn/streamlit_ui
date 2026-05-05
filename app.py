@@ -53,15 +53,22 @@ def check_db_health() -> tuple[bool, str]:
 
 def fetch_keyword_counts() -> pd.DataFrame:
     query = """
+        WITH dedup AS (
+            SELECT
+                team_name,
+                keyword,
+                MIN(created_at) AS first_seen,
+                MAX(created_at) AS last_seen
+            FROM player_stats
+            GROUP BY team_name, keyword
+        )
         SELECT
             team_name,
-            player_name,
             keyword,
             1 AS keyword_count,
-            MIN(created_at) AS first_seen,
-            MAX(created_at) AS last_seen
-        FROM player_stats
-        GROUP BY team_name, player_name, keyword
+            first_seen,
+            last_seen
+        FROM dedup
         ORDER BY team_name, keyword
     """
     with get_pg_conn() as conn:
