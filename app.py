@@ -182,6 +182,14 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
 
     max_value = int(agg["keyword_count"].max()) if not agg.empty else 1
 
+    def _team_sort_key(name: str):
+        try:
+            # Sort numerically when team_name represents a number (e.g., "1", "02", "10").
+            return (0, float(name))
+        except (TypeError, ValueError):
+            # Otherwise fall back to case-insensitive alphabetical sort.
+            return (1, str(name).lower())
+
     series: list[dict] = []
     for team, group in agg.groupby("team_name"):
         data = [
@@ -189,6 +197,9 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
             for _, row in group.iterrows()
         ]
         series.append({"name": team, "data": data})
+    
+    # Sort series by team name (numerically if possible, then alphabetically)
+    series.sort(key=lambda s: _team_sort_key(s["name"]))
 
     return {
         "chart": {"type": "packedbubble"},
