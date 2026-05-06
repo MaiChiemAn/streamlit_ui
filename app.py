@@ -96,12 +96,24 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
 
 
 def build_chart_options(df: pd.DataFrame) -> dict:
-    team_counts = df.groupby("team_name")[("keyword_count")].sum().reset_index()
+    team_counts = df.groupby("team_name")["keyword_count"].sum().reset_index()
+
+    def _team_sort_key(name: str):
+        try:
+            # Sort numerically when team_name represents a number (e.g., "1", "02", "10").
+            return (0, float(name))
+        except (TypeError, ValueError):
+            # Otherwise fall back to case-insensitive alphabetical sort.
+            return (1, str(name).lower())
+
+    sorted_team_rows = sorted(
+        team_counts.to_dict("records"), key=lambda row: _team_sort_key(row["team_name"])
+    )
 
     series_data = []
     drilldown_series = []
 
-    for _, row in team_counts.iterrows():
+    for row in sorted_team_rows:
         team = row["team_name"]
         total = int(row["keyword_count"])
         series_data.append({"name": team, "y": total, "drilldown": team})
@@ -119,7 +131,12 @@ def build_chart_options(df: pd.DataFrame) -> dict:
     return {
         "chart": {"type": "column", "animation": True},
         "title": {"text": f"Cập nhật dữ liệu lúc: {time.strftime('%H:%M:%S')}"},
-        "xAxis": {"type": "category", "title": {"text": "Team"}},
+        "xAxis": {
+            "type": "category",
+            "title": {"text": "Team"},
+            "tickInterval": 1,
+            "labels": {"step": 1},
+        },
         "yAxis": {"title": {"text": "Number of pass keywords"}},
         "legend": False,
         "plotOptions": {
@@ -147,10 +164,19 @@ def build_chart_options(df: pd.DataFrame) -> dict:
 def build_packedbubble_options(df: pd.DataFrame) -> dict:
     agg = df.groupby(["team_name", "keyword"])["keyword_count"].sum().reset_index()
 
+    # Keep only the top N teams by total keyword count to avoid bubble clutter.
+    TOP_N_TEAMS = 7
+    if not agg.empty:
+        team_totals = (
+            agg.groupby("team_name")["keyword_count"].sum().reset_index().sort_values("keyword_count", ascending=False)
+        )
+        top_team_names = set(team_totals.head(TOP_N_TEAMS)["team_name"].tolist())
+        agg = agg[agg["team_name"].isin(top_team_names)]
+
     if agg.empty:
         return {
             "chart": {"type": "packedbubble"},
-            "title": {"text": "Keyword distribution by team"},
+            "title": {"text": "Keyword distribution across the top 7 teams"},
             "series": [],
         }
 
@@ -166,7 +192,7 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
 
     return {
         "chart": {"type": "packedbubble"},
-        "title": {"text": "Keyword distribution by team"},
+        "title": {"text": "Keyword distribution across the top 7 teams"},
         "tooltip": {"useHTML": True, "pointFormat": "<b>{point.name}</b>: {point.value}"},
         "plotOptions": {
             "packedbubble": {
