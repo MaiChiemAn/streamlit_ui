@@ -1,8 +1,9 @@
 import os
 import time
+from contextlib import contextmanager
 
 import pandas as pd
-import psycopg2
+from psycopg2 import pool as pg_pool
 import streamlit as st
 import streamlit_highcharts as st_hc
 
@@ -12,25 +13,30 @@ st.title("📊 Real-time Team Performance Dashboard")
 DEFAULT_REFRESH_SEC = 15
 MAX_AUTO_CYCLES = 500
 
-PG_CONFIG = {
-    "host": os.getenv("PGHOST", "db.prisma.io"),
-    "port": int(os.getenv("PGPORT", "5432")),
-    "dbname": os.getenv("PGDATABASE", "postgres"),
-    "user": os.getenv(
-        "PGUSER",
-        "e8faac1743f27125661a54b1c36785ffedb635ee82b76fe9c4741ea560c1fd05",
-    ),
-    "password": os.getenv(
-        "PGPASSWORD",
-        "sk_e8y0fMTmSZ8bqMI066wJt",
-    ),
-    "sslmode": os.getenv("PGSSLMODE", "require"),
-    "connect_timeout": int(os.getenv("PGCONNECT_TIMEOUT", "5")),
-}
+@st.cache_resource
+def get_connection_pool():
+    return pg_pool.SimpleConnectionPool(
+        1,
+        10,
+        host=os.getenv("PGHOST", "db.prisma.io"),
+        port=int(os.getenv("PGPORT", "5432")),
+        dbname=os.getenv("PGDATABASE", "postgres"),
+        user=os.getenv(
+            "PGUSER",
+            "e8faac1743f27125661a54b1c36785ffedb635ee82b76fe9c4741ea560c1fd05",
+        ),
+        password=os.getenv("PGPASSWORD", "sk_e8y0fMTmSZ8bqMI066wJt"),
+        sslmode=os.getenv("PGSSLMODE", "require"),
+    )
 
-
+@contextmanager
 def get_pg_conn():
-    return psycopg2.connect(**PG_CONFIG)
+    pool = get_connection_pool()
+    conn = pool.getconn()
+    try:
+        yield conn
+    finally:
+        pool.putconn(conn)
 
 if "refresh_count" not in st.session_state:
     st.session_state["refresh_count"] = 0
@@ -82,7 +88,7 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
         return None, {
             "healthy": False,
             "message": health_msg,
-            "db": PG_CONFIG.get("host"),
+            "db": os.getenv("PGHOST", "db.prisma.io"),
             "timestamp": time.strftime("%H:%M:%S"),
         }
 
@@ -90,7 +96,7 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
     return df, {
         "healthy": True,
         "message": "DB healthy",
-        "db": PG_CONFIG.get("host"),
+        "db": os.getenv("PGHOST", "db.prisma.io"),
         "timestamp": time.strftime("%H:%M:%S"),
     }
 
@@ -234,10 +240,10 @@ def run_ui() -> None:
     col1, col2 = st.columns([3, 1])
     with col1:
         refresh_seconds = st.slider(
-            "Chu kỳ cập nhật (giây)", min_value=1, max_value=30, value=DEFAULT_REFRESH_SEC, step=1
+            "Update Interval (seconds)", min_value=1, max_value=30, value=DEFAULT_REFRESH_SEC, step=1
         )
     with col2:
-        auto_refresh = st.checkbox("Tự động cập nhật", value=True, key="auto_refresh_toggle")
+        auto_refresh = st.checkbox("Auto Update", value=True, key="auto_refresh_toggle")
 
     placeholder_chart = st.empty()
     placeholder_bubble = st.empty()
