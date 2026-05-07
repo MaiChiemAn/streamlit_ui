@@ -136,7 +136,7 @@ def build_chart_options(df: pd.DataFrame) -> dict:
 
     return {
         "chart": {"type": "column", "animation": True},
-        "title": {"text": f"Cập nhật dữ liệu lúc: {time.strftime('%H:%M:%S')}"},
+        "title": {"text": f"Last Data Update: {time.strftime('%H:%M:%S')}"},
         "xAxis": {
             "type": "category",
             "title": {"text": "Team"},
