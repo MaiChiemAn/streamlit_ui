@@ -6,12 +6,15 @@ import pandas as pd
 from psycopg2 import pool as pg_pool
 import streamlit as st
 import streamlit_highcharts as st_hc
+from datetime import datetime
+import pytz
 
 st.set_page_config(page_title="Team Dashboard", layout="wide")
-st.title("📊 Real-time Team Performance Dashboard")
+st.markdown("<h1 style='text-align: center;'>📊 AI Game Board</h1>", unsafe_allow_html=True)
 
 DEFAULT_REFRESH_SEC = 15
-MAX_AUTO_CYCLES = 500
+
+TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')
 
 @st.cache_resource
 def get_connection_pool():
@@ -89,7 +92,7 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
             "healthy": False,
             "message": health_msg,
             "db": os.getenv("PGHOST", "db.prisma.io"),
-            "timestamp": time.strftime("%H:%M:%S"),
+            "timestamp": datetime.now(TIMEZONE).strftime('%H:%M:%S'),
         }
 
     df = fetch_keyword_counts()
@@ -97,7 +100,7 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
         "healthy": True,
         "message": "DB healthy",
         "db": os.getenv("PGHOST", "db.prisma.io"),
-        "timestamp": time.strftime("%H:%M:%S"),
+        "timestamp": datetime.now(TIMEZONE).strftime('%H:%M:%S'),
     }
 
 
@@ -136,12 +139,20 @@ def build_chart_options(df: pd.DataFrame) -> dict:
 
     return {
         "chart": {"type": "column", "animation": True},
-        "title": {"text": f"Last Data Update: {time.strftime('%H:%M:%S')}"},
+        "title": {"text": f"Team Ranking"},
         "xAxis": {
             "type": "category",
             "title": {"text": "Team"},
             "tickInterval": 1,
-            "labels": {"step": 1},
+            "labels": {
+                "step": 1,
+                "rotation": -30,
+                "align": "right",
+                "style": {
+                    "fontSize": "10px",
+                    "textDecoration": "none",
+                }
+            },
         },
         "yAxis": {"title": {"text": "Number of pass keywords"}},
         "legend": False,
@@ -168,44 +179,50 @@ def build_chart_options(df: pd.DataFrame) -> dict:
 
 
 def build_packedbubble_options(df: pd.DataFrame) -> dict:
-    agg = df.groupby(["team_name", "keyword"])["keyword_count"].sum().reset_index()
+    agg_teams = df.groupby("team_name").agg({
+        "keyword_count": "sum",
+        "last_seen": "max"
+    }).reset_index()
 
-    # Keep only the top N teams by total keyword count to avoid bubble clutter.
     TOP_N_TEAMS = 7
-    if not agg.empty:
-        team_totals = (
-            agg.groupby("team_name")["keyword_count"].sum().reset_index().sort_values("keyword_count", ascending=False)
-        )
-        top_team_names = set(team_totals.head(TOP_N_TEAMS)["team_name"].tolist())
-        agg = agg[agg["team_name"].isin(top_team_names)]
+    if not agg_teams.empty:
+        top_teams_df = agg_teams.sort_values(
+            by=["keyword_count", "last_seen"], 
+            ascending=[False, True]
+        ).head(TOP_N_TEAMS)
+        
+        top_team_names = set(top_teams_df["team_name"].tolist())
+        
+        agg = df[df["team_name"].isin(top_team_names)]
+        agg = agg.groupby(["team_name", "keyword"])["keyword_count"].sum().reset_index()
+    else:
+        agg = pd.DataFrame()
 
     if agg.empty:
         return {
             "chart": {"type": "packedbubble"},
-            "title": {"text": "Keyword distribution across the top 7 teams"},
+            "title": {"text": "Keyword distribution across the top 7 teams (Time-weighted)"},
             "series": [],
         }
 
-    max_value = int(agg["keyword_count"].max()) if not agg.empty else 1
+    max_value = int(agg["keyword_count"].max())
 
     def _team_sort_key(name: str):
         try:
-            # Sort numerically when team_name represents a number (e.g., "1", "02", "10").
             return (0, float(name))
         except (TypeError, ValueError):
-            # Otherwise fall back to case-insensitive alphabetical sort.
             return (1, str(name).lower())
 
     series: list[dict] = []
     for team, group in agg.groupby("team_name"):
+        distinct_keywords_count = group["keyword"].nunique()
         data = [
             {"name": row["keyword"], "value": int(row["keyword_count"])}
             for _, row in group.iterrows()
         ]
-        series.append({"name": team, "data": data})
+        series.append({"name": f"{team} ({distinct_keywords_count} keywords)", "data": data})
     
-    # Sort series by team name (numerically if possible, then alphabetically)
-    series.sort(key=lambda s: _team_sort_key(s["name"]))
+    series.sort(key=lambda s: _team_sort_key(s["name"].split(" ")[0]))
 
     return {
         "chart": {"type": "packedbubble"},
@@ -214,7 +231,7 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
         "plotOptions": {
             "packedbubble": {
                 "minSize": "20%",
-                "maxSize": "100%",
+                "maxSize": "70%",
                 "zMin": 0,
                 "zMax": max_value,
                 "layoutAlgorithm": {
@@ -227,7 +244,6 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
                 "dataLabels": {
                     "enabled": True,
                     "format": "{point.name}",
-                    "filter": {"property": "y", "operator": ">", "value": 0},
                     "style": {"textOutline": "none", "fontWeight": "normal"},
                 },
             }
@@ -236,45 +252,51 @@ def build_packedbubble_options(df: pd.DataFrame) -> dict:
     }
 
 
-def run_ui() -> None:
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        refresh_seconds = st.slider(
-            "Update Interval (seconds)", min_value=1, max_value=30, value=DEFAULT_REFRESH_SEC, step=1
-        )
-    with col2:
-        auto_refresh = st.checkbox("Auto Update", value=True, key="auto_refresh_toggle")
+def run_ui():
+    # Session State Initialization
+    if "refresh_count" not in st.session_state:
+        st.session_state["refresh_count"] = 0
 
+    # Sidebar / Controls
+    with st.expander("⚙️ Dashboard Controls", expanded=True):
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            refresh_seconds = st.slider("Update Interval (sec)", 1, 60, DEFAULT_REFRESH_SEC)
+        with col2:
+            auto_refresh = st.checkbox("Auto Update", value=False)
+        with col3:
+            manual_update = st.button("🔄 Update Now", use_container_width=True)
+
+    # Containers cho Charts
     placeholder_chart = st.empty()
     placeholder_bubble = st.empty()
 
-    def render(df: pd.DataFrame):
-        refresh_idx = st.session_state.get("refresh_count", 0)
-        options = build_chart_options(df)
-        bubble_options = build_packedbubble_options(df)
+    def render(data_df):
+        curr_idx = st.session_state["refresh_count"]
         with placeholder_chart.container():
-            st_hc.streamlit_highcharts(options, height=450, key=f"column_chart_{refresh_idx}")
+            st_hc.streamlit_highcharts(build_chart_options(data_df), height=450, key=f"col_{curr_idx}")
         with placeholder_bubble.container():
-            st_hc.streamlit_highcharts(bubble_options, height=500, key=f"bubble_chart_{refresh_idx}")
-
+            st_hc.streamlit_highcharts(build_packedbubble_options(data_df), height=500, key=f"bub_{curr_idx}")
+    
     df, meta = run_data_workflow()
+    
     if not meta["healthy"] or df is None:
-        st.error(meta["message"])
+        st.error(f"❌ {meta['message']}")
         st.stop()
 
     render(df)
-    st.session_state["refresh_count"] += 1
 
     if auto_refresh:
-        for _ in range(MAX_AUTO_CYCLES):
+        while True:
             time.sleep(refresh_seconds)
+            
             df, meta = run_data_workflow()
             if not meta["healthy"] or df is None:
-                st.error(meta["message"])
-                st.stop()
-            render(df)
+                st.warning("Connection lost. Retrying...")
+                continue
+                
             st.session_state["refresh_count"] += 1
-
+            render(df)
 
 if __name__ == "__main__":
     run_ui()
