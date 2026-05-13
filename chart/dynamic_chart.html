@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Team Performance Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 80px;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .status {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            flex: 1;
+            text-align: center;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .status.loading {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .chart-wrapper {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        #chart-container-1 {
+            width: 100%;
+            min-height: 800px;  /* Tăng để ngang với bubble chart */
+            height: 800px;
+        }
+        
+        #chart-container-2 {
+            width: 100%;
+            min-height: 700px;  /* Giảm cho màn hình 16:10 */
+            height: 700px;
+        }
+
+        .footer {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .loading-indicator {
+            display: inline-block;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📊 Dynamic Team Performance Dashboard</h1>
+            <p class="subtitle">Real-time data visualization với PostgreSQL + Highcharts</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="refreshButton">🔄 Refresh Now</button>
+            
+            <div class="control-group">
+                <input type="checkbox" id="autoRefresh" checked>
+                <label for="autoRefresh">Auto-refresh</label>
+            </div>
+            
+            <div class="control-group">
+                <label for="refreshInterval">Interval (giây):</label>
+                <input type="number" id="refreshInterval" min="1" max="60" value="5">
+            </div>
+            
+            <div id="status" class="status info">
+                ℹ️ Đang khởi động...
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div id="stats" class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value loading-indicator">--</div>
+                <div class="stat-label">Total Teams</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value loading-indicator">--</div>
+                <div class="stat-label">Total Players</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value loading-indicator">--</div>
+                <div class="stat-label">Unique Keywords</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value loading-indicator">--</div>
+                <div class="stat-label">Total Records</div>
+            </div>
+        </div>
+
+        <!-- Chart 1: Column Chart with Drilldown -->
+        <div class="chart-wrapper">
+            <div id="chart-container-1"></div>
+        </div>
+
+        <!-- Chart 2: Packed Bubble Chart -->
+        <div class="chart-wrapper">
+            <div id="chart-container-2"></div>
+        </div>
+
+        <!-- Footer
+        <div class="footer">
+            <p>
+                Powered by <a href="https://www.highcharts.com/" target="_blank">Highcharts</a> 
+                | Backend API: <a href="http://localhost:5000/docs" target="_blank">FastAPI</a>
+            </p>
+            <p style="margin-top: 8px; font-size: 12px;">
+                💡 Đảm bảo FastAPI server đang chạy ở <code>http://localhost:5000</code>
+                | 📚 <a href="http://localhost:5000/docs" target="_blank">API Docs</a>
+            </p>
+        </div> -->
+    </div>
+
+    <!-- Highcharts Libraries -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/highcharts-more.js"></script>
+    <script src="https://code.highcharts.com/modules/drilldown.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+
+    <!-- Configuration -->
+    <script src="config.js"></script>
+    
+    <!-- Your Dynamic Chart Script -->
+    <script src="dynamic_chart.js"></script>
+</body>
+</html>
