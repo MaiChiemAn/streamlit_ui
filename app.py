@@ -154,7 +154,11 @@ def build_chart_options(df: pd.DataFrame) -> dict:
                 }
             },
         },
-        "yAxis": {"title": {"text": "Number of pass keywords"}},
+        "yAxis": {
+            "title": {"text": "Number of pass keywords"},
+            "allowDecimals": False,
+            "min": 0
+        },
         "legend": False,
         "plotOptions": {
             "series": {
