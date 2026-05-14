@@ -1,0 +1,22 @@
+services:
+  streamlit:
+    image: python:3.12-slim
+    container_name: hitachi_streamlit_dashboard
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install --no-cache-dir -q -r requirements.txt &&
+        streamlit run app.py --server.port=9001 --server.address=0.0.0.0
+      "
+    ports:
+      - "8502:9001"
+    environment:
+      - PGHOST=${PGHOST:-db.prisma.io}
+      - PGPORT=${PGPORT:-5432}
+      - PGDATABASE=${PGDATABASE:-postgres}
+      - PGUSER=${PGUSER:-e8faac1743f27125661a54b1c36785ffedb635ee82b76fe9c4741ea560c1fd05}
+      - PGPASSWORD=${PGPASSWORD:-sk_e8y0fMTmSZ8bqMI066wJt}
+      - PGSSLMODE=${PGSSLMODE:-require}
+    volumes:
+      - .:/app
+    restart: unless-stopped
