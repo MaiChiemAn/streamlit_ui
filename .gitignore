@@ -1,6 +1,7 @@
+.venv
 .vscode/
 .python-version
 __pycache__/
-uv.lock
 pyproject.toml
+uv.lock
 .env

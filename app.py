@@ -16,6 +16,10 @@ DEFAULT_REFRESH_SEC = 15
 
 TIMEZONE = pytz.timezone('Asia/Ho_Chi_Minh')
 
+PGTABLE_DRAFT_ROUND = os.getenv("PGTABLE_DRAFT_ROUND", "player_stats_draft")
+PGTABLE_OFFICIAL_ROUND = os.getenv("PGTABLE_OFFICIAL_ROUND", "player_stats")
+PGTABLE_FLASH_ROUND = os.getenv("PGTABLE_FLASH_ROUND", "extra_round")
+
 @st.cache_resource
 def get_connection_pool():
     return pg_pool.SimpleConnectionPool(
@@ -45,30 +49,30 @@ if "refresh_count" not in st.session_state:
     st.session_state["refresh_count"] = 0
 
 
-def check_db_health() -> tuple[bool, str]:
+def check_db_health(table_name: str) -> tuple[bool, str]:
     try:
         with get_pg_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 cursor.fetchone()
-                cursor.execute("SELECT to_regclass('public.player_stats')")
+                cursor.execute(f"SELECT to_regclass('public.{table_name}')")
                 exists = cursor.fetchone()[0] is not None
                 if not exists:
-                    return False, "Table player_stats not found"
+                    return False, f"Table {table_name} not found"
         return True, "DB healthy"
     except Exception as exc:
         return False, f"Health check error: {exc}"
 
 
-def fetch_keyword_counts() -> pd.DataFrame:
-    query = """
+def fetch_keyword_counts(table_name: str) -> pd.DataFrame:
+    query = f"""
         WITH dedup AS (
             SELECT
                 team_name,
                 keyword,
                 MIN(created_at) AS first_seen,
                 MAX(created_at) AS last_seen
-            FROM player_stats
+            FROM {table_name}
             GROUP BY team_name, keyword
         )
         SELECT
@@ -85,8 +89,8 @@ def fetch_keyword_counts() -> pd.DataFrame:
     return df
 
 
-def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
-    healthy, health_msg = check_db_health()
+def run_data_workflow(table_name: str) -> tuple[pd.DataFrame | None, dict]:
+    healthy, health_msg = check_db_health(table_name)
     if not healthy:
         return None, {
             "healthy": False,
@@ -95,7 +99,7 @@ def run_data_workflow() -> tuple[pd.DataFrame | None, dict]:
             "timestamp": datetime.now(TIMEZONE).strftime('%H:%M:%S'),
         }
 
-    df = fetch_keyword_counts()
+    df = fetch_keyword_counts(table_name)
     return df, {
         "healthy": True,
         "message": "DB healthy",
@@ -263,13 +267,26 @@ def run_ui():
 
     # Sidebar / Controls
     with st.expander("⚙️ Dashboard Controls", expanded=True):
-        col1, col2, col3 = st.columns([2, 1, 1])
+        col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 0.5, 1])
         with col1:
             refresh_seconds = st.slider("Update Interval (sec)", 1, 60, DEFAULT_REFRESH_SEC)
         with col2:
             auto_refresh = st.checkbox("Auto Update", value=False)
         with col3:
             manual_update = st.button("🔄 Update Now", use_container_width=True)
+        with col5:
+            round_selection = st.radio(
+                "**Round**",
+                options=["Draft", "Official", "Flash"],
+            )
+
+    table_mapping = {
+        "Draft": PGTABLE_DRAFT_ROUND,
+        "Official": PGTABLE_OFFICIAL_ROUND,
+        "Flash": PGTABLE_FLASH_ROUND
+    }
+    selected_table = table_mapping.get(round_selection)
+
 
     # Containers cho Charts
     placeholder_chart = st.empty()
@@ -282,7 +299,7 @@ def run_ui():
         with placeholder_bubble.container():
             st_hc.streamlit_highcharts(build_packedbubble_options(data_df), height=500, key=f"bub_{curr_idx}")
     
-    df, meta = run_data_workflow()
+    df, meta = run_data_workflow(selected_table)
     
     if not meta["healthy"] or df is None:
         st.error(f"❌ {meta['message']}")
@@ -294,7 +311,7 @@ def run_ui():
         while True:
             time.sleep(refresh_seconds)
             
-            df, meta = run_data_workflow()
+            df, meta = run_data_workflow(selected_table)
             if not meta["healthy"] or df is None:
                 st.warning("Connection lost. Retrying...")
                 continue
